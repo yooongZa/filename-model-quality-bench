@@ -26,10 +26,12 @@
 [Colab 노트북 열기](https://colab.research.google.com/github/yooongZa/filename-model-quality-bench/blob/main/notebooks/A_colab_quality.ipynb)
 
 1. 설치 셀을 실행합니다.
-2. 팀이 준비한 사진·프레임 ZIP을 업로드합니다.
+2. Google Drive의 `내 드라이브/filename/datasets/evaluation.zip`에 평가 ZIP을 올리고, 노트북에서 Drive를 연결합니다.
 3. **바꿔 볼 설정** 셀에서 해상도·토큰·프레임 수를 정합니다.
 4. `MOCK=True`로 흐름을 확인한 뒤 `False`로 실제 평가합니다.
-5. HTML 리포트와 CSV를 확인하고 결과 ZIP을 내려받습니다.
+5. 결과는 `내 드라이브/filename/runs/<실험이름>/`에 저장됩니다. 마지막 셀에서 공유용 ZIP도 저장합니다.
+
+Drive 경로는 노트북의 `DRIVE_ROOT`·`DRIVE_ZIP`에서 바꿉니다. 원문은 요청마다 저장하며, 같은 조건을 이어서 실행하려면 `RESUME_RUN_NAME`에 기존 실험 이름을 넣습니다. `USE_DRIVE=False`로 기존 PC 업로드도 사용할 수 있습니다. [Drive 데이터·결과 저장 안내](docs/COLAB_DRIVE.md)
 
 A의 실제 실행은 A100 등 CUDA GPU와 모델 접근 권한이 필요합니다. Google의 QAT 학습 체크포인트를 **BF16**으로 실행합니다. 로컬 Q4의 품질은 B에서 재확인합니다. [모델 구분](docs/MODEL.md)
 
