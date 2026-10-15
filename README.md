@@ -27,8 +27,8 @@
 
 1. 설치 셀을 실행합니다.
 2. Google Drive의 `내 드라이브/filename/datasets/evaluation.zip`에 평가 ZIP을 올리고, 노트북에서 Drive를 연결합니다.
-3. **바꿔 볼 설정** 셀에서 해상도·토큰·프레임 수를 정합니다.
-4. `MOCK=True`로 흐름을 확인한 뒤 `False`로 실제 평가합니다.
+3. `내 드라이브/filename/configs/a_colab.json`에서 해상도·토큰·프레임 수를 정합니다.
+4. JSON의 `notebook.mock: true`로 흐름을 확인한 뒤 `false`로 실제 평가합니다.
 5. 결과는 `내 드라이브/filename/runs/<실험이름>/`에 저장됩니다. 마지막 셀에서 공유용 ZIP도 저장합니다.
 
 Drive 경로는 노트북의 `DRIVE_ROOT`·`DRIVE_ZIP`에서 바꿉니다. 원문은 요청마다 저장하며, 같은 조건을 이어서 실행하려면 `RESUME_RUN_NAME`에 기존 실험 이름을 넣습니다. `USE_DRIVE=False`로 기존 PC 업로드도 사용할 수 있습니다. [Drive 데이터·결과 저장 안내](docs/COLAB_DRIVE.md)
@@ -57,6 +57,8 @@ python a_quality.py --dataset-root data/evaluation --mock --run-dir runs/first_c
 ```
 
 모의 실행은 고정 응답으로 저장·검사·리포트를 확인합니다. 실제 추론 전 `python -m pip install -r requirements-colab.txt`로 모델 실행 패키지를 준비하세요. `--mock`을 빼면 모델 다운로드·추론이 시작됩니다.
+
+[공통 config·profile 사용법](docs/CONFIG.md)에서 로컬 앱과 같은 입력 조건을 설정하는 방법을 확인하세요.
 
 ## 코드를 읽고 수정할 때
 

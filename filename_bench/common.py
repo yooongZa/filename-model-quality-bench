@@ -65,7 +65,7 @@ def environment():
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
 
 
-def load_config(path):
+def load_config(path, profile_path=None):
     path = Path(path).resolve()
     cfg = read_json(path)
     for key in ["dataset_root", "run_dir"]:
@@ -73,6 +73,29 @@ def load_config(path):
         cfg[key] = str((path.parent / p).resolve() if not p.is_absolute() else p)
     for key in ["prompt_path", "schema_path"]:
         cfg[key] = str(ROOT / cfg[key])
+    selected = profile_path or cfg.get("profile_path")
+    if selected:
+        selected = Path(selected).expanduser()
+        if not selected.is_absolute():
+            selected = path.parent / selected
+        apply_profile(cfg, selected)
+    return cfg
+
+
+def apply_profile(cfg, path):
+    """A·B·앱이 같은 입력 조건을 읽습니다. profile 경로는 파일 자신을 기준으로 합니다."""
+    path = Path(path).expanduser().resolve()
+    profile = read_json(path)
+    allowed = {"baseline", "video_extraction", "prompt_path", "schema_path"}
+    if set(profile) - allowed:
+        raise ValueError(f"알 수 없는 profile 항목: {set(profile) - allowed}")
+    for key in ("baseline", "video_extraction"):
+        cfg.setdefault(key, {}).update(profile.get(key, {}))
+    for key in ("prompt_path", "schema_path"):
+        if key in profile:
+            value = Path(profile[key]).expanduser()
+            cfg[key] = str((path.parent / value).resolve() if not value.is_absolute() else value)
+    cfg["profile_path"] = str(path)
     return cfg
 
 

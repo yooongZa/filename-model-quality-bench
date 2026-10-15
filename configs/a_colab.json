@@ -1,0 +1,78 @@
+{
+  "dataset_root": "../data/evaluation",
+  "run_dir": "../runs/a",
+  "prompt_path": "assets/prompt_v3.txt",
+  "schema_path": "assets/schema_v3.json",
+  "case_ids": null,
+  "seeds": [
+    42
+  ],
+  "repeats": 1,
+  "gpu_index": 0,
+  "baseline": {
+    "short_edge_px": 1080,
+    "vision_token_budget": 1120,
+    "frames": "all",
+    "selection": "uniform",
+    "temperature": 0,
+    "max_new_tokens": 256,
+    "context_per_request": 32768,
+    "concurrency": 1
+  },
+  "sweeps": {
+    "short_edge_px": [
+      1080,
+      720,
+      480,
+      360,
+      240
+    ],
+    "vision_token_budget": [
+      1120,
+      560,
+      280,
+      140,
+      70
+    ],
+    "max_new_tokens": [
+      512,
+      256,
+      128
+    ],
+    "frames": [
+      1,
+      3,
+      6,
+      12
+    ],
+    "selection": [
+      "uniform",
+      "blur",
+      "dedup",
+      "both"
+    ]
+  },
+  "backend": {
+    "kind": "transformers",
+    "model_id": "google/gemma-4-12B-it-qat-q4_0-unquantized",
+    "revision": "b6ed86275a6a5735884e208bfed95b445a684ca2",
+    "request_timeout_s": 180,
+    "model_label": "google/gemma-4-12b-qat",
+    "checkpoint_training": "QAT"
+  },
+  "video_extraction": {
+    "seconds_per_frame": 10,
+    "max_frames": 5,
+    "ffmpeg_path": "ffmpeg",
+    "ffprobe_path": "ffprobe",
+    "timeout_s": 120
+  },
+  "profile_path": null,
+  "selection_frames": 6,
+  "notebook": {
+    "mock": true,
+    "suite": "smoke",
+    "limit": null,
+    "resume_run_name": ""
+  }
+}
