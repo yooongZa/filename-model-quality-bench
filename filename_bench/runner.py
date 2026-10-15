@@ -13,6 +13,7 @@ from .backends import classify_error, make_backend
 from .common import (ROOT, BenchError, RunLock, append_row, digest, environment,
                      file_hash, load_config, read_json, read_rows, validate_output, write_json)
 from .data import eda, load_cases, prepare
+from .scoring import reference_tags
 from .telemetry import Monitor
 
 FATAL = {"oom", "timeout", "cancelled", "backend_error"}
@@ -185,6 +186,12 @@ def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=
     references = {"answers": {p.stem: read_json(p) for p in reference_paths if p.exists()},
                   "annotations": read_json(annotation_path) if annotation_path.exists() else [],
                   "human_reviewed": manifest.get("human_reviewed", False)}
+    # 정답 작성 실수는 모델을 로드하기 전에 알려줍니다. 원본 정답은 변경하지 않습니다.
+    for case_id, answer in references["answers"].items():
+        try:
+            reference_tags(answer)
+        except ValueError as error:
+            raise ValueError(f"answers/{case_id}.json: {error}") from error
     identity = {"kind": kind, "suite": suite, "mock": mock,
                 "config": {k: v for k, v in cfg.items() if k != "run_dir"}, "data_key": data_key,
                 "prompt_hash": file_hash(cfg["prompt_path"]), "schema_hash": file_hash(cfg["schema_path"]),
