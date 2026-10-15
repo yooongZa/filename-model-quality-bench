@@ -87,10 +87,10 @@ class ExamplesTest(unittest.TestCase):
         first = run(self.cfg, "a", mock=True, limit=1)
         second = run(self.cfg, "a", mock=True, resume=True)
         self.assertEqual(first["recorded_attempts"], 1)
-        self.assertEqual(second["recorded_attempts"], 3)
+        self.assertEqual(second["recorded_attempts"], 2)
         directory = Path(second["run_dir"])
         rows = read_rows(directory / "requests.jsonl")
-        self.assertEqual(len({r["job_id"] for r in rows}), 3)
+        self.assertEqual(len({r["job_id"] for r in rows}), 2)
         with (directory / "review.csv").open(encoding="utf-8-sig", newline="") as f:
             reviews = list(csv.DictReader(f))
         reviews[0]["notes"] = "사람 검수 기록 유지"

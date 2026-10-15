@@ -1,12 +1,9 @@
 {
-  "dataset_root": "../data/filename_eval24_1080",
+  "dataset_root": "../data/evaluation",
   "run_dir": "../runs/a",
   "prompt_path": "assets/prompt_v3.txt",
   "schema_path": "assets/schema_v3.json",
-  "case_ids": [
-    "I01",
-    "V01"
-  ],
+  "case_ids": null,
   "seeds": [
     42
   ],
@@ -15,7 +12,7 @@
   "baseline": {
     "short_edge_px": 1080,
     "vision_token_budget": 1120,
-    "frames": 12,
+    "frames": 3,
     "selection": "uniform",
     "temperature": 0,
     "max_new_tokens": 256,
@@ -51,8 +48,10 @@
   },
   "backend": {
     "kind": "transformers",
-    "model_id": "google/gemma-4-E4B-it",
-    "revision": "main",
-    "request_timeout_s": 180
+    "model_id": "google/gemma-4-12B-it-qat-q4_0-unquantized",
+    "revision": "b6ed86275a6a5735884e208bfed95b445a684ca2",
+    "request_timeout_s": 180,
+    "model_label": "google/gemma-4-12b-qat",
+    "checkpoint_training": "QAT"
   }
 }

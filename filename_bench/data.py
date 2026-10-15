@@ -1,7 +1,8 @@
-"""Deterministic frame selection and resizing from originals. Never edits source media."""
+"""데이터 읽기 → 프레임 선택 → 크기 조절. 원본 파일은 수정하지 않습니다."""
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 
 import numpy as np
@@ -10,12 +11,45 @@ from PIL import Image, ImageOps
 from .common import BenchError, file_hash, read_json, read_rows
 
 
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+
+def natural_key(path):
+    """1.jpg, 2.jpg, 10.jpg를 숫자 순서로 읽기 위한 정렬 기준입니다."""
+    return [int(part) if part.isdigit() else part.casefold()
+            for part in re.split(r"(\d+)", path.name)]
+
+
+def discover_rows(root):
+    """입력 목록 파일 없이 images/와 frames/ 폴더에서 평가 단위를 읽습니다."""
+    rows = []
+    photos = sorted((root / "images").glob("*"), key=natural_key)
+    for path in photos:
+        if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES and not path.name.startswith("."):
+            rows.append({"id": path.stem, "media_type": "image",
+                         "image_paths": [path.relative_to(root).as_posix()]})
+    for clip in sorted((root / "frames").glob("*"), key=natural_key):
+        if not clip.is_dir() or clip.name.startswith("."):
+            continue
+        frames = [p.relative_to(root).as_posix() for p in sorted(clip.iterdir(), key=natural_key)
+                  if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES and not p.name.startswith(".")]
+        if not frames:
+            raise ValueError(f"영상 폴더에 이미지가 없습니다: {clip}")
+        rows.append({"id": clip.name, "media_type": "video", "image_paths": frames})
+    return rows
+
+
 def load_cases(root, ids=None):
+    """사진 한 장 또는 같은 영상의 프레임 묶음을 case(평가 단위)로 읽습니다."""
     root = Path(root)
-    rows = read_rows(root / "model_inputs.jsonl")
+    input_list = root / "model_inputs.jsonl"
+    rows = read_rows(input_list) if input_list.exists() else discover_rows(root)
     if not rows:
-        raise ValueError(f"No model_inputs.jsonl rows: {root}")
+        raise ValueError(f"평가 이미지가 없습니다: {root}. images/·frames/ 또는 model_inputs.jsonl을 확인하세요.")
     all_ids = [r["id"] for r in rows]
+    if any(not isinstance(case_id, str) or not case_id or case_id in {".", ".."}
+           or any(char in case_id for char in "/\\:") for case_id in all_ids):
+        raise ValueError("샘플 ID에는 경로 구분자를 넣을 수 없습니다.")
     if len(all_ids) != len(set(all_ids)):
         raise ValueError("Duplicate sample IDs")
     if ids and set(ids) - set(all_ids):
@@ -40,6 +74,7 @@ def load_cases(root, ids=None):
 
 
 def uniform_indices(n, k):
+    """n개 후보에서 k개를 시간 간격이 고르게 선택합니다. 한 장이면 중앙입니다."""
     if k < 1 or k > n:
         raise BenchError("unsupported", f"Requested {k} distinct frames; only {n} available")
     return [n // 2] if k == 1 else [round(i * (n - 1) / (k - 1)) for i in range(k)]
@@ -48,7 +83,7 @@ def uniform_indices(n, k):
 def frame_features(path):
     with Image.open(path) as image:
         gray = ImageOps.grayscale(ImageOps.exif_transpose(image))
-        # Fixed analysis resolution makes blur scores comparable between candidates.
+        # 같은 분석 크기에서 선명도를 비교합니다. 원본 해상도 차이의 영향을 줄입니다.
         gray.thumbnail((256, 256), Image.Resampling.LANCZOS)
         a = np.asarray(gray, dtype=np.float32)
         lap = -4 * a[1:-1, 1:-1] + a[:-2, 1:-1] + a[2:, 1:-1] + a[1:-1, :-2] + a[1:-1, 2:]
@@ -59,6 +94,7 @@ def frame_features(path):
 
 
 def select_frames(paths, count, policy="uniform", duplicate_distance=6):
+    """uniform=균등, blur=선명도, dedup=중복 억제, both=두 기준 조합입니다."""
     anchors = uniform_indices(len(paths), count)
     if policy == "uniform":
         return anchors, {"policy": policy, "fallback_count": 0}
@@ -66,7 +102,7 @@ def select_frames(paths, count, policy="uniform", duplicate_distance=6):
         raise ValueError(f"Unknown selection policy: {policy}")
     features = [frame_features(p) for p in paths]
     chosen, fallback = [], 0
-    # One choice per time bin: filtering cannot remove the entire middle/end of a clip.
+    # 시간 구간마다 한 장을 뽑아 영상의 앞·중간·끝이 유지되게 합니다.
     for b in range(count):
         candidates = list(range(b * len(paths) // count, (b + 1) * len(paths) // count))
         center = (candidates[0] + candidates[-1]) / 2
@@ -88,6 +124,7 @@ def select_frames(paths, count, policy="uniform", duplicate_distance=6):
 
 
 def prepare(case, setting):
+    """선택한 이미지를 메모리에서 축소합니다. 원본보다 크게 확대하지 않습니다."""
     count = 1 if case["media_type"] == "image" else setting["frames"]
     idx, selection = select_frames(case["paths"], count, setting["selection"])
     images, sizes, hashes = [], [], []
@@ -113,6 +150,7 @@ def prepare(case, setting):
 
 
 def eda(cases, manifest):
+    """데이터 개수·크기·완전 중복을 정리합니다. 정답은 추론에 전달하지 않습니다."""
     sizes = []
     for case in cases:
         for path in case["paths"]:
@@ -120,7 +158,7 @@ def eda(cases, manifest):
                 sizes.append(list(im.size))
     hashes = [h for c in cases for h in c["sha256"]]
     return {"cases": len(cases), "images": sum(c["media_type"] == "image" for c in cases),
-            "videos": sum(c["media_type"] == "video" for c in cases), "input_pngs": len(hashes),
-            "exact_duplicate_pngs": len(hashes) - len(set(hashes)), "sizes_wh": sizes,
+            "videos": sum(c["media_type"] == "video" for c in cases), "input_files": len(hashes),
+            "exact_duplicate_files": len(hashes) - len(set(hashes)), "sizes_wh": sizes,
             "case_ids": [c["id"] for c in cases], "condition_counts_full_dataset": manifest.get("condition_counts"),
             "reference_human_reviewed": manifest.get("human_reviewed", False)}

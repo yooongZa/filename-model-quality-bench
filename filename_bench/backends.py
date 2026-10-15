@@ -1,4 +1,4 @@
-"""A: Transformers/CUDA. B: an owned local llama-server process. Mock: plumbing only."""
+"""실제 모델과 통신하는 부분입니다. A=Transformers, B=llama-server, Mock=동작 확인."""
 from __future__ import annotations
 
 import base64
@@ -48,6 +48,7 @@ class MockBackend:
 
 
 class TransformersBackend:
+    """Colab CUDA에서 QAT 학습 체크포인트를 BF16으로 실행합니다."""
     def __init__(self, cfg):
         self.cfg, self.model, self.pid = cfg, None, None
         self.info = {"backend": "transformers", "real_inference": True}
@@ -70,6 +71,9 @@ class TransformersBackend:
         revision = getattr(self.model.config, "_commit_hash", None) or self.cfg.get("revision", "main")
         self.processor = AutoProcessor.from_pretrained(self.cfg["model_id"], revision=revision, padding_side="left")
         self.info.update({"model": self.cfg["model_id"], "resolved_revision": revision,
+                          "model_label": self.cfg.get("model_label"),
+                          "model_type": self.model.config.model_type,
+                          "checkpoint_training": self.cfg.get("checkpoint_training"),
                           "dtype": "bfloat16", "quantization": "none", "device": torch.cuda.get_device_name(0),
                           "device_memory_bytes": torch.cuda.get_device_properties(0).total_memory,
                           "device_map": {k: str(v) for k, v in self.model.hf_device_map.items()},
@@ -88,7 +92,7 @@ class TransformersBackend:
         torch.cuda.reset_peak_memory_stats()
         text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True,
                                                    enable_thinking=False)
-        # Gemma4Processor routes max_soft_tokens to its image processor and placeholder expansion.
+        # 해상도와 별개로, 이미지 한 장에 사용할 시각 토큰의 상한을 전달합니다.
         inputs = self.processor(text=text, images=pics, return_tensors="pt", add_special_tokens=False,
                                 max_soft_tokens=setting["vision_token_budget"])
         n_input = inputs["input_ids"].shape[-1]
@@ -97,7 +101,7 @@ class TransformersBackend:
         context = setting["context_per_request"]
         if n_input + setting["max_new_tokens"] > context:
             raise BenchError("input_too_long", f"input {n_input} + output {setting['max_new_tokens']} > {context}")
-        # BatchFeature.to casts floating tensors only; input token IDs stay integer.
+        # 이미지 텐서는 BF16으로 옮깁니다. 토큰 ID는 정수 자료형을 유지합니다.
         inputs = inputs.to(device=self.model.device, dtype=self.model.dtype)
         temperature = setting["temperature"]
         options = {"do_sample": temperature > 0, "max_new_tokens": setting["max_new_tokens"],
@@ -133,7 +137,7 @@ class TransformersBackend:
 
 
 class LlamaBackend:
-    """Owns only the process it starts; never attaches to or kills an existing server."""
+    """직접 시작한 llama-server만 관리합니다. 다른 앱의 서버는 건드리지 않습니다."""
     def __init__(self, cfg):
         self.cfg, self.process, self.pid, self.log_file = cfg, None, None, None
         self.info = {"backend": "llama-server", "real_inference": True}
@@ -209,6 +213,8 @@ class LlamaBackend:
                              slots=slots, load_s=time.perf_counter() - start,
                              requested_gpu_layers=self.cfg.get("gpu_layers", 999),
                              quantization_label=self.cfg.get("quantization_label", "record actual GGUF quantization"),
+                             model_label=self.cfg.get("model_label"),
+                             declared_source_model_id=self.cfg.get("source_model_id"),
                              gpu_offload_verified=False, model_path=self.cfg["model_path"],
                              vision_budget_requested=setting["vision_token_budget"], vision_budget_verified=False)
         except BaseException:

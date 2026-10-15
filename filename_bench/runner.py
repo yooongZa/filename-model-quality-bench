@@ -1,4 +1,4 @@
-"""Finite experiments, a single result writer, and explicit resume identities."""
+"""설정별 실험 계획 → 모델 호출 → 원문 저장 → 리포트 생성 순서로 실행합니다."""
 from __future__ import annotations
 
 import argparse
@@ -19,6 +19,7 @@ FATAL = {"oom", "timeout", "cancelled", "backend_error"}
 
 
 def profiles(cfg, kind, suite):
+    """suite(실험 묶음)에 맞게 기준 설정에서 한 가지 조건씩 바꿉니다."""
     base = cfg["baseline"]
     out = []
 
@@ -29,8 +30,7 @@ def profiles(cfg, kind, suite):
     if kind == "a":
         if suite == "smoke":
             add("smoke_photo", media="image")
-            add("smoke_video_3", {"frames": 3}, "video")
-            add("smoke_video_12", {"frames": 12}, "video")
+            add("smoke_video", media="video")
         elif suite == "baseline":
             add("baseline")
         elif suite == "resolution":
@@ -54,7 +54,7 @@ def profiles(cfg, kind, suite):
         repeats = cfg.get("rounds_per_profile", 3)
         if suite == "smoke":
             add("local_photo", {"frames": 1}, "image", 1)
-            add("local_video", {"frames": 3}, "video", 1)
+            add("local_video", media="video", n=1)
         elif suite == "context":
             for ctx in cfg["sweeps"]["context_per_request"]:
                 add(f"context_{ctx}", {"context_per_request": ctx, "frames": 1}, "image", repeats, True)
@@ -156,10 +156,17 @@ def make_jobs(profile, cases, cfg, run_key, kind):
 
 
 def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=False):
+    """실험의 전체 흐름입니다. mock=True이면 GPU 없이 저장·검사만 확인합니다."""
+    # 1. 입력과 출력 규칙을 읽고, 업로드된 데이터 종류에 맞는 실험을 선택합니다.
     cases, manifest = load_cases(cfg["dataset_root"], cfg.get("case_ids"))
     prompt = Path(cfg["prompt_path"]).read_text(encoding="utf-8")
     schema = read_json(cfg["schema_path"])
     plan = profiles(cfg, kind, suite)
+    available_media = {case["media_type"] for case in cases}
+    skipped = [p["name"] for p in plan if p["media"] and p["media"] not in available_media]
+    plan = [p for p in plan if p["name"] not in skipped]
+    if not plan:
+        raise ValueError(f"{suite} 실험에 필요한 종류의 입력이 없습니다. 사진/영상 폴더를 확인하세요.")
     if kind == "a" and any(p["setting"]["concurrency"] != 1 for p in plan):
         raise ValueError("A example supports sample_batch_size=1 and concurrency=1 only")
     for p in plan:
@@ -168,6 +175,7 @@ def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=
             raise ValueError("Counts and image sizes must be positive")
         if s["vision_token_budget"] not in [70, 140, 280, 560, 1120]:
             raise ValueError("Gemma 4 vision token budget must be 70/140/280/560/1120")
+    # 2. 입력·설정·코드의 해시로 이번 실험을 구분합니다. 조건이 달라지면 새 실험입니다.
     data_key = digest([{k: v for k, v in c.items() if k != "paths"} for c in cases])
     code_key = digest({str(p.relative_to(ROOT)): file_hash(p) for p in sorted((ROOT / "filename_bench").glob("*.py"))})
     dataset_root = Path(cfg["dataset_root"])
@@ -184,7 +192,8 @@ def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=
     planned = sum(len(make_jobs(p, cases, cfg, run_key, kind)) for p in plan)
     if dry_run:
         result = {"planned_requests": planned, "context_calibration_requests_extra": sum(p["context_probe"] for p in plan),
-                  "profiles": plan, "eda": eda(cases, manifest), "mock": mock}
+                  "profiles": plan, "skipped_profiles_no_media": skipped,
+                  "eda": eda(cases, manifest), "mock": mock}
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return result
     directory = Path(cfg["run_dir"]) / (suite + ("_mock" if mock else ""))
@@ -198,7 +207,8 @@ def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=
                 raise ValueError("Config, input, prompt, or code changed. Use a new run_dir.")
         else:
             write_json(meta_path, {"run_key": run_key, "identity": identity, "environment": environment(),
-                                   "planned_requests": planned, "reference_human_reviewed": manifest.get("human_reviewed", False)})
+                                   "planned_requests": planned, "skipped_profiles_no_media": skipped,
+                                   "reference_human_reviewed": manifest.get("human_reviewed", False)})
             write_json(directory / "eda.json", eda(cases, manifest))
             write_json(directory / "references.json", references)
         records_path = directory / "requests.jsonl"
@@ -207,6 +217,7 @@ def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=
         complete = {r["job_id"] for r in old if r.get("execution_status") in ["ok", "truncated", "input_too_long", "unsupported"]}
         if kind == "b" and suite == "soak" and old and len(complete) < planned:
             raise ValueError("A soak test must use one uninterrupted model process. Use a new run_dir to restart it.")
+        # 3. 모델을 준비하고 요청합니다. 원문과 오류를 모두 남겨 실패도 평가에 포함합니다.
         backend = make_backend(cfg["backend"], mock)
         recorded, stop, attempted_in_session = len(old), False, 0
         session_id = uuid.uuid4().hex[:12]
@@ -316,16 +327,24 @@ def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=
 
 
 def main(kind):
+    """터미널 옵션을 읽는 곳입니다. 실험값은 configs/ 또는 옵션에서 바꾸세요."""
     parser = argparse.ArgumentParser(description=f"filename {kind.upper()} benchmark example")
     parser.add_argument("--config", default=str(ROOT / "configs" / ("a_quality.json" if kind == "a" else "b_local.json")))
     parser.add_argument("--suite", default="smoke")
-    parser.add_argument("--mock", action="store_true", help="Fixed fake output; never a model quality measurement")
-    parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--dry-run", action="store_true", help="Inspect data/config only; no model load")
-    parser.add_argument("--limit", type=int, help="Maximum new measured requests (context calibration is separate)")
+    parser.add_argument("--dataset-root", help="업로드 또는 압축 해제한 평가 데이터 폴더")
+    parser.add_argument("--run-dir", help="새 결과 폴더. 조건을 바꾸면 이 경로도 바꾸세요.")
+    parser.add_argument("--mock", action="store_true", help="GPU 없이 고정 응답으로 저장·검사·리포트 확인")
+    parser.add_argument("--resume", action="store_true", help="같은 조건에서 완료한 요청을 건너뛰고 재개")
+    parser.add_argument("--dry-run", action="store_true", help="모델 로드 없이 데이터와 요청 수만 확인")
+    parser.add_argument("--limit", type=int, help="이번 실행의 최대 측정 요청 수. 컨텍스트 보정 요청은 별도")
     args = parser.parse_args()
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be positive")
-    result = run(load_config(args.config), kind, args.suite, args.mock, args.resume, args.limit, args.dry_run)
+    config = load_config(args.config)
+    if args.dataset_root:
+        config["dataset_root"] = str(Path(args.dataset_root).resolve())
+    if args.run_dir:
+        config["run_dir"] = str(Path(args.run_dir).resolve())
+    result = run(config, kind, args.suite, args.mock, args.resume, args.limit, args.dry_run)
     if result.get("stopped_on_error"):
         raise SystemExit(1)

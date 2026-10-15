@@ -1,5 +1,6 @@
 -r requirements.txt
-transformers>=5.9,<6
+# Gemma 4 Unified (12B) 대응 버전. 기존 5.9에는 이 모델 매핑이 없습니다.
+transformers>=5.19,<6
 accelerate>=1.0
 torch>=2.6
 torchvision>=0.21
