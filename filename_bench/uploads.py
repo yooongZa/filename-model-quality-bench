@@ -1,4 +1,4 @@
-"""팀이 준비한 ZIP을 읽습니다. 사진·프레임·정답을 새로 생성하지 않습니다."""
+"""팀이 준비한 ZIP을 읽습니다. 원본 영상이 있으면 대표 프레임을 추출합니다."""
 from __future__ import annotations
 
 import shutil
@@ -15,15 +15,15 @@ def find_dataset_root(folder):
     """ZIP 안에 바깥 폴더가 하나 더 들어 있어도 실제 데이터 위치를 찾습니다."""
     folder = Path(folder)
     while True:
-        if any((folder / name).exists() for name in ("model_inputs.jsonl", "images", "frames")):
+        if any((folder / name).exists() for name in ("model_inputs.jsonl", "images", "frames", "videos")):
             return folder
         children = [p for p in folder.iterdir() if p.name != "__MACOSX" and not p.name.startswith(".")]
         if len(children) != 1 or not children[0].is_dir():
-            raise ValueError("ZIP에 images/ 또는 frames/ 폴더를 넣어 주세요. docs/DATASET.md를 참고하세요.")
+            raise ValueError("ZIP에 images/·frames/·videos/ 폴더를 넣어 주세요. docs/DATASET.md를 참고하세요.")
         folder = children[0]
 
 
-def import_dataset_zip(archive, destination, max_bytes=2 * 1024**3, max_files=10000):
+def import_dataset_zip(archive, destination, max_bytes=2 * 1024**3, max_files=10000, video_options=None):
     """새 폴더에 업로드를 풀고 검사한 뒤, 평가에 사용할 경로를 반환합니다.
 
     archive에는 ZIP 파일 경로 또는 BytesIO를 넣습니다. 기존 폴더는 덮어쓰지
@@ -64,7 +64,7 @@ def import_dataset_zip(archive, destination, max_bytes=2 * 1024**3, max_files=10
                     shutil.copyfileobj(source, output)
 
     dataset_root = find_dataset_root(destination)
-    cases, _ = load_cases(dataset_root)
+    cases, _ = load_cases(dataset_root, video_options=video_options)
     # 손상된 파일을 GPU 모델 로드 전에 발견합니다. 이미지 내용은 변경하지 않습니다.
     for case in cases:
         for path in case["paths"]:

@@ -3,7 +3,7 @@
 ## 처음 실행하기
 
 1. Google Drive의 **내 드라이브**에 `filename/datasets` 폴더를 만듭니다.
-2. 팀의 사진·영상 프레임·정답을 묶은 `evaluation.zip`을 그 폴더에 업로드합니다. [데이터 구조](DATASET.md)를 따릅니다.
+2. 팀의 사진·원본 영상·정답을 묶은 `evaluation.zip`을 그 폴더에 업로드합니다. [데이터 구조](DATASET.md)를 따릅니다.
 3. [Colab 노트북](https://colab.research.google.com/github/yooongZa/filename-model-quality-bench/blob/main/notebooks/A_colab_quality.ipynb)을 열고 설치 셀을 실행합니다.
 4. Drive 연결 셀을 실행하고 Google 계정 접근을 허용합니다.
 5. 데이터 읽기 → 설정 → 실행 전 확인 → 실행 → 결과 확인 순서로 진행합니다.

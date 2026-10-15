@@ -53,5 +53,12 @@
     "request_timeout_s": 180,
     "model_label": "google/gemma-4-12b-qat",
     "checkpoint_training": "QAT"
+  },
+  "video_extraction": {
+    "seconds_per_frame": 10,
+    "max_frames": 5,
+    "ffmpeg_path": "ffmpeg",
+    "ffprobe_path": "ffprobe",
+    "timeout_s": 120
   }
 }

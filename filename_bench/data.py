@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from .common import BenchError, file_hash, read_json, read_rows
+from .video import VIDEO_SUFFIXES, extract_video
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
@@ -21,7 +22,7 @@ def natural_key(path):
 
 
 def discover_rows(root):
-    """입력 목록 파일 없이 images/와 frames/ 폴더에서 평가 단위를 읽습니다."""
+    """images/·frames/·videos/에서 평가 단위를 읽습니다. 영상 추출은 load_cases가 합니다."""
     rows = []
     photos = sorted((root / "images").glob("*"), key=natural_key)
     for path in photos:
@@ -36,16 +37,20 @@ def discover_rows(root):
         if not frames:
             raise ValueError(f"영상 폴더에 이미지가 없습니다: {clip}")
         rows.append({"id": clip.name, "media_type": "video", "image_paths": frames})
+    for path in sorted((root / "videos").glob("*"), key=natural_key):
+        if path.is_file() and path.suffix.lower() in VIDEO_SUFFIXES and not path.name.startswith("."):
+            rows.append({"id": path.stem, "media_type": "video",
+                         "video_path": path.relative_to(root).as_posix()})
     return rows
 
 
-def load_cases(root, ids=None):
-    """사진 한 장 또는 같은 영상의 프레임 묶음을 case(평가 단위)로 읽습니다."""
+def load_cases(root, ids=None, video_options=None):
+    """사진·프레임 묶음·원본 영상을 읽습니다. 원본 영상은 FFmpeg로 대표 프레임을 준비합니다."""
     root = Path(root)
     input_list = root / "model_inputs.jsonl"
     rows = read_rows(input_list) if input_list.exists() else discover_rows(root)
     if not rows:
-        raise ValueError(f"평가 이미지가 없습니다: {root}. images/·frames/ 또는 model_inputs.jsonl을 확인하세요.")
+        raise ValueError(f"평가 입력이 없습니다: {root}. images/·frames/·videos/ 또는 model_inputs.jsonl을 확인하세요.")
     all_ids = [r["id"] for r in rows]
     if any(not isinstance(case_id, str) or not case_id or case_id in {".", ".."}
            or any(char in case_id for char in "/\\:") for case_id in all_ids):
@@ -60,6 +65,17 @@ def load_cases(root, ids=None):
     for row in rows:
         if ids and row["id"] not in ids:
             continue
+        if "video_path" in row:
+            video_path = (root / row["video_path"]).resolve()
+            if (row["media_type"] != "video" or not video_path.is_relative_to(root.resolve())
+                    or not video_path.is_file() or "image_paths" in row):
+                raise ValueError(f"영상은 video_path 하나로 지정하세요: {row['id']}")
+            directory, extraction = extract_video(video_path, root / ".filename_frames", video_options)
+            row = {**row,
+                   "image_paths": [(directory / frame["path"]).relative_to(root.resolve()).as_posix()
+                                   for frame in extraction["frames"]],
+                   "timestamps_s": [frame["requested_time_s"] for frame in extraction["frames"]],
+                   "video_extraction": extraction}
         paths = [(root / p).resolve() for p in row["image_paths"]]
         if not paths or any(not p.is_relative_to(root.resolve()) or not p.is_file() for p in paths):
             raise ValueError(f"Missing or out-of-root input: {row['id']}")
@@ -69,7 +85,8 @@ def load_cases(root, ids=None):
             raise ValueError("A photo case must have one image")
         hashes = [file_hash(p) for p in paths]
         cases.append({**row, "paths": paths, "sha256": hashes,
-                      "timestamps_s": [frame_meta.get(p, {}).get("requested_time_s") for p in row["image_paths"]]})
+                      "timestamps_s": row.get("timestamps_s", [frame_meta.get(p, {}).get("requested_time_s")
+                                                                for p in row["image_paths"]])})
     return cases, manifest
 
 
@@ -126,6 +143,8 @@ def select_frames(paths, count, policy="uniform", duplicate_distance=6):
 def prepare(case, setting):
     """선택한 이미지를 메모리에서 축소합니다. 원본보다 크게 확대하지 않습니다."""
     count = 1 if case["media_type"] == "image" else setting["frames"]
+    if count == "all":
+        count = len(case["paths"])  # 길이 기반 추출 결과를 모두 사용하고 싶을 때 선택합니다.
     idx, selection = select_frames(case["paths"], count, setting["selection"])
     images, sizes, hashes = [], [], []
     for i in idx:

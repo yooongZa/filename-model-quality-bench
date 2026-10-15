@@ -158,7 +158,7 @@ def make_jobs(profile, cases, cfg, run_key, kind):
 def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=False):
     """실험의 전체 흐름입니다. mock=True이면 GPU 없이 저장·검사만 확인합니다."""
     # 1. 입력과 출력 규칙을 읽고, 업로드된 데이터 종류에 맞는 실험을 선택합니다.
-    cases, manifest = load_cases(cfg["dataset_root"], cfg.get("case_ids"))
+    cases, manifest = load_cases(cfg["dataset_root"], cfg.get("case_ids"), cfg.get("video_extraction"))
     prompt = Path(cfg["prompt_path"]).read_text(encoding="utf-8")
     schema = read_json(cfg["schema_path"])
     plan = profiles(cfg, kind, suite)
@@ -171,7 +171,8 @@ def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=
         raise ValueError("A example supports sample_batch_size=1 and concurrency=1 only")
     for p in plan:
         s = p["setting"]
-        if s["concurrency"] < 1 or s["frames"] < 1 or s["max_new_tokens"] < 1 or s["short_edge_px"] < 1:
+        if (s["concurrency"] < 1 or (s["frames"] != "all" and (type(s["frames"]) is not int or s["frames"] < 1))
+                or s["max_new_tokens"] < 1 or s["short_edge_px"] < 1):
             raise ValueError("Counts and image sizes must be positive")
         if s["vision_token_budget"] not in [70, 140, 280, 560, 1120]:
             raise ValueError("Gemma 4 vision token budget must be 70/140/280/560/1120")
@@ -211,6 +212,9 @@ def run(cfg, kind, suite="smoke", mock=False, resume=False, limit=None, dry_run=
                                    "reference_human_reviewed": manifest.get("human_reviewed", False)})
             write_json(directory / "eda.json", eda(cases, manifest))
             write_json(directory / "references.json", references)
+            write_json(directory / "video_extraction.json", {
+                c["id"]: {"source_video": c["video_path"], **c["video_extraction"]}
+                for c in cases if "video_extraction" in c})
         records_path = directory / "requests.jsonl"
         old = read_rows(records_path)
         # Valid and invalid model responses are completed measurements. Infrastructure errors can retry.
@@ -333,6 +337,9 @@ def main(kind):
     parser.add_argument("--suite", default="smoke")
     parser.add_argument("--dataset-root", help="업로드 또는 압축 해제한 평가 데이터 폴더")
     parser.add_argument("--run-dir", help="새 결과 폴더. 조건을 바꾸면 이 경로도 바꾸세요.")
+    parser.add_argument("--frames", help="모델 입력 프레임 수. all이면 준비된 프레임을 모두 사용")
+    parser.add_argument("--seconds-per-frame", type=float, help="원본 영상에서 몇 초당 한 장을 추출할지")
+    parser.add_argument("--max-frames", type=int, help="원본 영상 한 개의 최대 추출 장수")
     parser.add_argument("--mock", action="store_true", help="GPU 없이 고정 응답으로 저장·검사·리포트 확인")
     parser.add_argument("--resume", action="store_true", help="같은 조건에서 완료한 요청을 건너뛰고 재개")
     parser.add_argument("--dry-run", action="store_true", help="모델 로드 없이 데이터와 요청 수만 확인")
@@ -341,6 +348,15 @@ def main(kind):
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be positive")
     config = load_config(args.config)
+    if args.frames:
+        try:
+            config["baseline"]["frames"] = "all" if args.frames == "all" else int(args.frames)
+        except ValueError:
+            parser.error("--frames에는 양의 정수 또는 all을 입력하세요.")
+    for key in ("seconds_per_frame", "max_frames"):
+        value = getattr(args, key)
+        if value is not None:
+            config.setdefault("video_extraction", {})[key] = value
     if args.dataset_root:
         config["dataset_root"] = str(Path(args.dataset_root).resolve())
     if args.run_dir:

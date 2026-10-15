@@ -22,3 +22,6 @@ models/
 runs/
 validation/
 configs/*.local.json
+
+# 원본 영상에서 추출한 프레임 캐시
+.filename_frames/
