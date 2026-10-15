@@ -8,30 +8,10 @@
 
 **같은 자료를 입력 조건만 바꿔 분석하고, 품질을 유지할 수 있는 설정을 찾습니다.** 아래는 실제 모델을 사용하는 실행 흐름입니다.
 
-```mermaid
-flowchart TD
-    DATA["팀이 준비한 ZIP<br/>사진 · 같은 영상의 프레임"] --> READ["입력 검사 · EDA<br/>파일 수 · 크기 · 중복 확인"]
-    READ --> PLAN["실험 조건 만들기<br/>해상도 · 토큰 수 · 프레임 수 · 선택 방법"]
-    CONFIG["수정할 곳<br/>노트북 설정 셀 / a_quality.json"] --> PLAN
-    PLAN --> PREP["조건별 입력 준비<br/>프레임 선택 → 원본에서 축소"]
-    PREP --> PROCESSOR["모델 전처리기<br/>이미지와 지시문을 모델 입력으로 변환"]
-    PROMPT["prompt_v3.txt<br/>태그와 JSON 출력 규칙"] --> PROCESSOR
-    PROCESSOR --> MODEL["Colab GPU · Transformers<br/>Gemma 4 12B QAT · BF16<br/>모델을 유지하며 순차 추론"]
-    MODEL --> SAVE["응답 원문 저장 · JSON 검사<br/>토큰 수 · 시간 · 메모리 기록"]
-    SAVE --> NEXT{"남은 조건·입력이 있나?"}
-    NEXT -->|예| PREP
-    NEXT -->|아니요| REPORT["HTML 리포트 · CSV · 사람 평가표"]
-    ANSWERS["팀이 작성한 정답 · 선택 사항"] -.->|평가에만 사용| REPORT
-    REPORT --> REVIEW["사람이 내용 평가<br/>태그 정확도 · 핵심 누락 · 근거 없는 추정"]
-    REVIEW --> DECIDE["품질을 유지하는 입력 설정 선택"]
+![A 모델 품질 실험 실행 흐름](docs/diagrams/flow.svg)
 
-    classDef editable fill:#fff3cd,stroke:#9a6700,color:#24292f;
-    classDef inference fill:#ddf4ff,stroke:#0969da,color:#24292f;
-    classDef result fill:#dafbe1,stroke:#1a7f37,color:#24292f;
-    class CONFIG,PROMPT editable;
-    class MODEL inference;
-    class REPORT,REVIEW,DECIDE result;
-```
+[크게 보기 · PNG](docs/diagrams/flow.png) · [수정 가능한 Mermaid 원본](docs/diagrams/flow.mmd)
+
 
 - **한 번에 한 조건을 비교합니다.** 예를 들어 해상도 실험은 토큰·프레임 수를 고정하고 1080 → 720 → 480px 등으로 바꿉니다.
 - **모델은 처음 불러온 뒤 재사용합니다.** 사진 한 장 또는 영상 프레임 묶음 하나를 요청 한 건으로 보냅니다. 여러 프레임은 같은 영상의 시간순 장면입니다.

@@ -1,0 +1,12 @@
+{
+  "theme": "neutral",
+  "themeVariables": {
+    "fontFamily": "Arial, Apple SD Gothic Neo, sans-serif",
+    "fontSize": "16px"
+  },
+  "flowchart": {
+    "curve": "linear",
+    "wrappingWidth": 320
+  },
+  "htmlLabels": false
+}
