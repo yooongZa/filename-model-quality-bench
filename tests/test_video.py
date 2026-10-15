@@ -135,7 +135,7 @@ class VideoTest(unittest.TestCase):
         drive.mkdir()
         archive = drive / "evaluation.zip"
         answer = {"keywords": ["테스트 패턴"], "reason": "움직이는 테스트 패턴입니다.",
-                  "place_name": None, "needs_review": False}
+                  "place_name": None}
         with zipfile.ZipFile(archive, "w") as zipped:
             zipped.write(self.video, "evaluation/videos/clip.mp4")
             zipped.writestr("evaluation/answers/clip.json", json.dumps(answer, ensure_ascii=False))

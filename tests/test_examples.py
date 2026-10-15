@@ -45,9 +45,13 @@ class ExamplesTest(unittest.TestCase):
 
 
     def test_strict_output_contract(self):
-        good = '{"keywords":["고양이"],"reason":"소파 위 고양이","place_name":null,"needs_review":false}'
+        good = '{"keywords":["고양이"],"reason":"소파 위 고양이","place_name":null}'
         self.assertTrue(validate_output(good, self.schema)["schema_valid"])
-        for bad in ["```json\n" + good + "\n```", good.replace('"needs_review":false', '"needs_review":"false"'),
+        for removed in ("needs_review", "core_keywords"):
+            extra = json.loads(good)
+            extra[removed] = False if removed == "needs_review" else []
+            self.assertFalse(validate_output(json.dumps(extra), self.schema)["schema_valid"])
+        for bad in ["```json\n" + good + "\n```", good.replace('"place_name":null', '"place_name":123'),
                     good.replace('"고양이"', ','.join('"태그%d"' % i for i in range(6))),
                     good.replace('"place_name":null', '"place_name":null,"title":"제목"'),
                     good.replace('"place_name":null', '"place_name":null,"place_name":"서울"'),

@@ -35,7 +35,7 @@ class MockBackend:
     def infer(self, images, prompt, setting, seed):
         # Does not read answers or annotations. This is deliberately not a quality model.
         raw = json.dumps({"keywords": ["모의실행"], "reason": "저장·검증·리포트 경로를 확인하는 고정 응답입니다.",
-                          "place_name": None, "needs_review": True}, ensure_ascii=False)
+                          "place_name": None}, ensure_ascii=False)
         return {"raw_output": raw, "input_tokens": None, "output_tokens": None,
                 "finish_reason": "mock", "inference_s": 0.0, "vision_tokens_actual": None,
                 "real_inference": False}

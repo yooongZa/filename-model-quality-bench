@@ -9,7 +9,7 @@ evaluation/
   answers/cycling.json
 ```
 
-**영상 한 편당 `answers/영상ID.json` 정답 한 개만 작성합니다.** 프레임 파일과 프레임별 정답은 준비하지 않아도 됩니다. 기존 4개 필드(`keywords`, `reason`, `place_name`, `needs_review`)를 영상 전체 기준으로 작성하세요.
+**영상 한 편당 `answers/영상ID.json` 정답 한 개만 작성합니다.** 프레임 파일과 프레임별 정답은 준비하지 않아도 됩니다. 3개 필드(`keywords`, `reason`, `place_name`)를 영상 전체 기준으로 작성하세요.
 
 기본 설정은 **10초당 1장, 최대 5장**입니다. `N = min(max_frames, ceil(영상 길이 / seconds_per_frame))`로 장수를 정한 다음, 영상을 N개 구간으로 나누어 각 구간의 가운데를 추출합니다. 10초 이하의 정상 영상은 가운데 한 장입니다.
 

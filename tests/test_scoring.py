@@ -1,4 +1,4 @@
-"""허용 태그가 많아도 출력 기준으로 채점하고 핵심 누락을 별도로 잡는지 검사합니다."""
+"""일치율의 분모, 제외 조건, 사람 평가와 원문 보존을 검사합니다."""
 import csv
 import json
 import tempfile
@@ -15,73 +15,62 @@ from filename_bench.scoring import reference_tags, score_tags
 
 
 def reference():
-    return {"keywords": ["자전거", "바다", "해변", "야외", "도로"],
-            "core_keywords": [["자전거 타기", "사이클링", "자전거 라이딩"],
-                              ["해안도로", "바닷가 도로"]],
+    return {"keywords": ["자전거", "바다", "해변", "야외", "도로", "자전거 타기",
+                         "사이클링", "자전거 라이딩", "해안도로", "바닷가 도로"],
             "reason": "바다가 보이는 도로에서 자전거를 타고 이동합니다.",
-            "place_name": None, "needs_review": False}
+            "place_name": None}
 
 
 class TagScoringTest(unittest.TestCase):
-    def test_hundred_allowed_tags_five_correct_is_full_precision(self):
+    def test_hundred_allowed_tags_five_matches_is_one(self):
         answer = reference()
         answer["keywords"] = [f"허용태그{i}" for i in range(100)]
-        answer["core_keywords"] = [["허용태그98"], ["허용태그99"]]
         score = score_tags([f"허용태그{i}" for i in range(5)], answer)
         self.assertEqual(score["allowed_reference_tag_count"], 100)
-        self.assertEqual(score["allowed_tag_precision"], 1)
-        self.assertEqual(score["core_tag_recall"], 0)
+        self.assertEqual(score["allowed_tag_match_rate"], 1)
 
-    def test_allowed_variations_and_core_recall(self):
+    def test_registered_variations_match(self):
         score = score_tags(["사이클링", "바닷가도로", "바다", "야외"], reference())
-        self.assertEqual(score["allowed_tag_precision"], 1)
-        self.assertEqual(score["core_tag_recall"], 1)
+        self.assertEqual(score["allowed_tag_match_rate"], 1)
         self.assertEqual(score["unmatched_tags"], [])
 
-    def test_unknown_and_missing_core_are_separate(self):
+    def test_unregistered_tags_are_listed_for_human_review(self):
         score = score_tags(["사이클링", "기차"], reference())
-        self.assertEqual(score["allowed_tag_precision"], .5)
-        self.assertEqual(score["core_tag_recall"], .5)
+        self.assertEqual(score["allowed_tag_match_rate"], .5)
         self.assertEqual(score["unmatched_tags"], ["기차"])
-        self.assertEqual(score["missing_core_groups"], ["해안도로"])
 
-    def test_synonyms_do_not_inflate_core_coverage(self):
-        score = score_tags(["사이클링", "자전거 타기", "자전거 라이딩"], reference())
-        self.assertEqual(score["allowed_tag_precision"], 1)
-        self.assertEqual(score["core_tag_recall"], .5)
-        self.assertEqual(score["matched_core_groups"], ["자전거 타기"])
-
-    def test_optional_tags_never_increase_recall_denominator(self):
+    def test_more_reference_tags_do_not_change_denominator(self):
         answer = reference()
         before = score_tags(["사이클링", "해안도로"], answer)
-        answer["keywords"] += [f"선택태그{i}" for i in range(100)]
+        answer["keywords"] += [f"추가태그{i}" for i in range(100)]
         after = score_tags(["사이클링", "해안도로"], answer)
-        self.assertEqual(before["core_tag_recall"], after["core_tag_recall"])
-        self.assertEqual(before["allowed_tag_precision"], after["allowed_tag_precision"])
+        self.assertEqual(before["allowed_tag_match_rate"], after["allowed_tag_match_rate"])
 
-    def test_empty_output_and_legacy_reference(self):
-        empty = score_tags([], reference())
-        self.assertIsNone(empty["allowed_tag_precision"])
-        self.assertEqual(empty["core_tag_recall"], 0)
-        old = reference()
-        del old["core_keywords"]
-        score = score_tags(["바다"], old)
-        self.assertEqual(score["allowed_tag_precision"], 1)
-        self.assertIsNone(score["core_tag_recall"])
+    def test_empty_output_is_not_a_perfect_match(self):
+        self.assertIsNone(score_tags([], reference())["allowed_tag_match_rate"])
+        answer = reference()
+        answer["keywords"] = []
+        self.assertEqual(score_tags(["바다"], answer)["allowed_tag_match_rate"], 0)
+
+    def test_legacy_extra_fields_are_ignored(self):
+        answer = reference()
+        answer.update(needs_review=False, core_keywords=[["기차"]])
+        self.assertEqual(score_tags(["기차"], answer)["allowed_tag_match_rate"], 0)
 
     def test_normalization_without_substring_or_semantic_guessing(self):
         import unicodedata
         answer = reference()
         answer["keywords"] += ["MTB"]
         score = score_tags([unicodedata.normalize("NFD", "바다"), "m t b", "바다가 아님", "대양"], answer)
-        self.assertEqual(score["allowed_tag_precision"], .5)
+        self.assertEqual(score["allowed_tag_match_rate"], .5)
         self.assertEqual(score["unmatched_tags"], ["바다가 아님", "대양"])
 
-    def test_ambiguous_or_unreachable_core_reference_is_rejected(self):
-        for groups in [[["바다"], ["바 다"]], [[]], ["자전거"], [[str(i)] for i in range(6)]]:
+    def test_invalid_reference_fields_are_rejected(self):
+        for field, value in [("keywords", [" "]), ("keywords", "바다"), ("keywords", [1]),
+                             ("reason", ""), ("place_name", True)]:
             answer = reference()
-            answer["core_keywords"] = groups
-            with self.subTest(groups=groups), self.assertRaises(ValueError):
+            answer[field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
                 reference_tags(answer)
 
 
@@ -98,7 +87,7 @@ class ScoringReportTest(unittest.TestCase):
         # 응답 저장 형식만 흉내 내는 테스트 fixture(고정 입력)입니다. 모델 측정이 아닙니다.
         for index, tags in enumerate([["사이클링", "해안도로", "바다", "야외"], ["사이클링", "기차"], [],
                                       ["사이클링"], ["사이클링"], ["사이클링"]]):
-            parsed = {"keywords": tags, "reason": "테스트 응답", "place_name": None, "needs_review": False}
+            parsed = {"keywords": tags, "reason": "테스트 응답", "place_name": None}
             rows.append({"attempt_id": str(index), "job_id": str(index), "profile": "baseline",
                          "case_id": "missing" if index == 5 else "V01", "media_type": "video",
                          "execution_status": "timeout" if index == 4 else "ok",
@@ -120,18 +109,22 @@ class ScoringReportTest(unittest.TestCase):
         summary = read_json(self.output / "summary.json")[0]
         self.assertEqual(summary["tag_scored_attempts"], 3)
         self.assertEqual(summary["empty_tag_outputs"], 1)
-        self.assertEqual(summary["allowed_tag_precision_n"], 2)
-        self.assertEqual(summary["core_tag_recall_n"], 3)
-        self.assertEqual(summary["mean_allowed_tag_precision"], .75)
-        self.assertEqual(summary["mean_core_tag_recall"], .5)
+        self.assertEqual(summary["allowed_tag_match_rate_n"], 2)
+        self.assertEqual(summary["mean_allowed_tag_match_rate"], .75)
         metrics = self.csv_rows("metrics.csv")
+        for field in list(summary) + list(metrics[0]):
+            self.assertFalse(any(old in field.split("_") for old in ("precision", "recall", "core")) or "needs_review" in field)
         self.assertEqual(json.loads(metrics[1]["unmatched_tags"]), ["기차"])
-        self.assertEqual(metrics[3]["allowed_tag_precision"], "")
-        self.assertEqual(metrics[4]["core_tag_recall"], "")
-        self.assertEqual(metrics[5]["allowed_tag_precision"], "")
+        self.assertEqual(metrics[3]["allowed_tag_match_rate"], "")
+        self.assertEqual(metrics[4]["allowed_tag_match_rate"], "")
+        self.assertEqual(metrics[5]["allowed_tag_match_rate"], "")
         self.assertIn("미등록 태그", (self.output / "report.html").read_text())
         reviews = self.csv_rows("review.csv")
+        for field in reviews[0]:
+            self.assertFalse(any(old in field.split("_") for old in ("precision", "recall", "core")) or "needs_review" in field)
         reviews[0]["notes"] = "사람 검수 기록"
+        reviews[0]["tag_accuracy_0to2"] = "2"
+        reviews[0]["filename_usefulness_0to2"] = "1"
         with (self.output / "review.csv").open("w", encoding="utf-8-sig", newline="") as file:
             writer = csv.DictWriter(file, fieldnames=reviews[0].keys())
             writer.writeheader()
@@ -139,11 +132,12 @@ class ScoringReportTest(unittest.TestCase):
         # 실행 후 원본 정답이 바뀌어도 당시 저장한 기준으로 계속 채점합니다.
         changed = reference()
         changed["keywords"] = ["기차"]
-        changed["core_keywords"] = []
         write_json(self.data / "answers/V01.json", changed)
         build_report(self.output, self.data)
         self.assertEqual(read_json(self.output / "summary.json")[0], summary)
         self.assertEqual(self.csv_rows("review.csv")[0]["notes"], "사람 검수 기록")
+        self.assertEqual(self.csv_rows("review.csv")[0]["tag_accuracy_0to2"], "2")
+        self.assertEqual(self.csv_rows("review.csv")[0]["filename_usefulness_0to2"], "1")
         self.assertEqual((self.output / "requests.jsonl").read_text(), self.raw)
 
     def test_mock_and_capacity_runs_have_no_tag_scores(self):
@@ -156,14 +150,13 @@ class ScoringReportTest(unittest.TestCase):
             build_report(self.output, self.data)
             summary = read_json(self.output / "summary.json")[0]
             self.assertEqual(summary["tag_scored_attempts"], 0)
-            self.assertIsNone(summary["mean_allowed_tag_precision"])
-            self.assertIsNone(summary["mean_core_tag_recall"])
+            self.assertIsNone(summary["mean_allowed_tag_match_rate"])
 
     def test_bad_reference_fails_before_model_loading(self):
         (self.data / "images").mkdir(parents=True)
         Image.new("RGB", (16, 16), "blue").save(self.data / "images/I01.png")
         bad = reference()
-        bad["core_keywords"] = [["바다"], ["바 다"]]
+        bad["keywords"] = ["바다", "  "]
         write_json(self.data / "answers/I01.json", bad)
         config = load_config(ROOT / "configs/a_quality.json")
         config.update(dataset_root=str(self.data), run_dir=str(self.output / "new"))
@@ -184,7 +177,7 @@ class ScoringReportTest(unittest.TestCase):
         directory = Path(result["run_dir"])
         self.assertEqual(read_json(directory / "references.json")["answers"]["I01"], answer)
         self.assertEqual(run(config, "a", mock=True, resume=True)["recorded_attempts"], 1)
-        self.assertIsNone(read_json(directory / "summary.json")[0]["mean_allowed_tag_precision"])
+        self.assertIsNone(read_json(directory / "summary.json")[0]["mean_allowed_tag_match_rate"])
 
 
 if __name__ == "__main__":

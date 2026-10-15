@@ -11,7 +11,7 @@ flowchart TD
     NEXT -->|예| PREP
     NEXT -->|아니요| REPORT["HTML 리포트 · CSV · 사람 평가표"]
     ANSWERS["팀이 작성한 정답 · 선택 사항"] -.->|평가에만 사용| REPORT
-    REPORT --> REVIEW["사람이 내용 평가<br/>태그 정확도 · 핵심 누락 · 근거 없는 추정"]
+    REPORT --> REVIEW["사람이 내용 평가<br/>태그 정확성 · 파일명 활용도 · 근거 없는 추정"]
     REVIEW --> DECIDE["품질을 유지하는 입력 설정 선택"]
 
     classDef editable fill:#fff3cd,stroke:#9a6700,color:#24292f;

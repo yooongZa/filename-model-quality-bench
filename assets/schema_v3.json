@@ -1,13 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "filename tags response v3",
+  "title": "filename tags response (3 fields)",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "keywords",
     "reason",
-    "place_name",
-    "needs_review"
+    "place_name"
   ],
   "properties": {
     "keywords": {
@@ -34,9 +33,6 @@
           "type": "null"
         }
       ]
-    },
-    "needs_review": {
-      "type": "boolean"
     }
   }
 }
