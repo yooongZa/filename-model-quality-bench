@@ -44,6 +44,12 @@
       3,
       6,
       12
+    ],
+    "selection": [
+      "uniform",
+      "blur",
+      "dedup",
+      "both"
     ]
   },
   "backend": {
@@ -60,5 +66,7 @@
     "ffmpeg_path": "ffmpeg",
     "ffprobe_path": "ffprobe",
     "timeout_s": 120
-  }
+  },
+  "profile_path": null,
+  "selection_frames": 6
 }

@@ -47,8 +47,8 @@ def profiles(cfg, kind, suite):
             for n in cfg["sweeps"]["frames"]:
                 add(f"frames_{n}", {"frames": n}, "video")
         elif suite == "selection":
-            for policy in ["uniform", "blur", "dedup", "both"]:
-                add(f"selection_{policy}", {"frames": 6, "selection": policy}, "video")
+            for policy in cfg["sweeps"].get("selection", ["uniform", "blur", "dedup", "both"]):
+                add(f"selection_{policy}", {"frames": cfg.get("selection_frames", 6), "selection": policy}, "video")
         else:
             raise ValueError("A suite: smoke, baseline, resolution, vision, output, frames, selection")
     else:
@@ -341,6 +341,7 @@ def main(kind):
     """터미널 옵션을 읽는 곳입니다. 실험값은 configs/ 또는 옵션에서 바꾸세요."""
     parser = argparse.ArgumentParser(description=f"filename {kind.upper()} benchmark example")
     parser.add_argument("--config", default=str(ROOT / "configs" / ("a_quality.json" if kind == "a" else "b_local.json")))
+    parser.add_argument("--profile", help="공통 추론 profile JSON; config보다 우선 적용")
     parser.add_argument("--suite", default="smoke")
     parser.add_argument("--dataset-root", help="업로드 또는 압축 해제한 평가 데이터 폴더")
     parser.add_argument("--run-dir", help="새 결과 폴더. 조건을 바꾸면 이 경로도 바꾸세요.")
@@ -354,7 +355,7 @@ def main(kind):
     args = parser.parse_args()
     if args.limit is not None and args.limit < 1:
         parser.error("--limit must be positive")
-    config = load_config(args.config)
+    config = load_config(args.config, str(Path(args.profile).resolve()) if args.profile else None)
     if args.frames:
         try:
             config["baseline"]["frames"] = "all" if args.frames == "all" else int(args.frames)
