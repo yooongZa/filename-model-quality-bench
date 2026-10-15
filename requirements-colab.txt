@@ -1,0 +1,6 @@
+-r requirements.txt
+transformers>=5.9,<6
+accelerate>=1.0
+torch>=2.6
+torchvision>=0.21
+sentencepiece>=0.2
